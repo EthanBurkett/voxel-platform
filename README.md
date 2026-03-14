@@ -11,6 +11,8 @@ The mod loader currently supports a TS/JS sdk with future endeavors to support l
 
 As of right now there is no documentation on usage, as it's still very early stage on creating the bridge from C++ to the node api and exposing functions.
 
+When running the minecraft client executable for the first time, a tsconfig will be created as well as a `types` folder with all the current methods supported. To create a mod and use said types, create either a directory or single file, for example, `mods/myawesomemod.ts` will be a mod named `myawesomemod`. If you create a directory for your mod, you may use npm to install packages that solely belong to YOUR mod, this will also require your directory to have a `package.json` with the `main` entry pointing to your main entry point of your mod. If using a single mod file, that mod will use the global node_modules that can be installed in the same folder as your minecraft client executable.
+
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/jrum7HhegA)
 
 ![Tutorial World](.github/TutorialWorld.png)
