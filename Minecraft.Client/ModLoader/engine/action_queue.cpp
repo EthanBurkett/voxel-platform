@@ -20,6 +20,7 @@
 #include "../../Minecraft.h"
 #include "../../MinecraftServer.h"
 #include "../../PlayerList.h"
+#include "../../ServerLevel.h"
 #include "../../ServerPlayer.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -229,27 +230,39 @@ void EnqueueClearInventory() {
 }
 
 #ifndef _XBOX
-// Sync a copy of the item to the server player so the next container sync includes it
-// and the client inventory is not overwritten with server state missing the item.
-static void SyncGiveItemToServer(Player *clientPlayer, const shared_ptr<ItemInstance> &item) {
+// Resolve the ServerPlayer for the current local player. Used to keep server state in sync with mod actions.
+static shared_ptr<ServerPlayer> GetServerPlayerForLocal() {
   MinecraftServer *server = MinecraftServer::getInstance();
-  if (!server) return;
+  if (!server) return nullptr;
   PlayerList *list = server->getPlayers();
-  if (!list || list->players.empty()) return;
+  if (!list || list->players.empty()) return nullptr;
   Minecraft *mc = Minecraft::GetInstance();
-  if (!mc) return;
+  if (!mc) return nullptr;
   int idx = mc->getLocalPlayerIdx();
   if (idx < 0 || static_cast<size_t>(idx) >= list->players.size()) idx = 0;
-  shared_ptr<ServerPlayer> serverPlayer = list->players[idx];
-  if (!serverPlayer || !serverPlayer->inventory) return;
+  return list->players[idx];
+}
+
+// When a server exists, give only on the server and sync to client via refreshContainer.
+// This keeps server as authority so the item doesn't disappear on use.
+// Returns true if we gave on the server (client will get it via packet); then caller should not add to client.
+static bool GiveItemOnServerOnly(const shared_ptr<ItemInstance> &item) {
+  shared_ptr<ServerPlayer> serverPlayer = GetServerPlayerForLocal();
+  if (!serverPlayer || !serverPlayer->inventory) return false;
   shared_ptr<ItemInstance> serverCopy = item->copy();
-  if (serverPlayer->inventory->add(serverCopy))
-    serverPlayer->refreshContainer(serverPlayer->inventoryMenu);
+  if (!serverPlayer->inventory->add(serverCopy)) return false;
+  serverPlayer->inventory->setChanged();
+  serverPlayer->refreshContainer(serverPlayer->inventoryMenu);
+  return true;
 }
 #endif
 
 void ApplyPendingActions(Level *level, Player *player) {
 #ifndef _XBOX
+  shared_ptr<ServerPlayer> serverPlayer = GetServerPlayerForLocal();
+  Level *serverLevel = nullptr;
+  if (serverPlayer && MinecraftServer::getInstance())
+    serverLevel = MinecraftServer::getInstance()->getLevel(serverPlayer->dimension);
   std::deque<Entry> batch;
   {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -261,59 +274,90 @@ void ApplyPendingActions(Level *level, Player *player) {
       if (level)
         level->setTileAndData(e.i[0], e.i[1], e.i[2], e.i[3], e.i[4],
                              Tile::UPDATE_ALL);
+      if (serverLevel)
+        serverLevel->setTileAndData(e.i[0], e.i[1], e.i[2], e.i[3], e.i[4],
+                                   Tile::UPDATE_ALL);
       break;
     case KSetHealth:
-      if (player)
+      if (player) {
         player->setHealth(e.f[0]);
+        if (serverPlayer) serverPlayer->setHealth(e.f[0]);
+      }
       break;
     case KSetFood:
-      if (player && player->getFoodData())
+      if (player && player->getFoodData()) {
         player->getFoodData()->setFoodLevel(e.i[0]);
+        if (serverPlayer && serverPlayer->getFoodData())
+          serverPlayer->getFoodData()->setFoodLevel(e.i[0]);
+      }
       break;
     case KSetSaturation:
-      if (player && player->getFoodData())
+      if (player && player->getFoodData()) {
         player->getFoodData()->setSaturation(e.f[0]);
+        if (serverPlayer && serverPlayer->getFoodData())
+          serverPlayer->getFoodData()->setSaturation(e.f[0]);
+      }
       break;
     case KSetPosition:
-      if (player)
+      if (player) {
         player->setPos(e.d[0], e.d[1], e.d[2]);
+        if (serverPlayer) serverPlayer->setPos(e.d[0], e.d[1], e.d[2]);
+      }
       break;
     case KSetRotation:
       if (player) {
         player->xRot = e.f[0];
         player->yRot = e.f[1];
+        if (serverPlayer) {
+          serverPlayer->xRot = e.f[0];
+          serverPlayer->yRot = e.f[1];
+        }
       }
       break;
     case KSetGameMode:
       if (player) {
         GameType *gt = GameType::byId(e.i[0]);
-        if (gt)
+        if (gt) {
           player->setGameMode(gt);
+          if (serverPlayer) serverPlayer->setGameMode(gt);
+        }
       }
       break;
     case KSetLevelTime:
       if (level)
         level->setGameTime(e.i64[0]);
+      if (serverLevel)
+        serverLevel->setGameTime(e.i64[0]);
       break;
     case KSetDayTime:
       if (level)
         level->setDayTime(e.i64[0]);
+      if (serverLevel)
+        serverLevel->setDayTime(e.i64[0]);
       break;
     case KSetRaining:
       if (level && level->getLevelData())
         level->getLevelData()->setRaining(e.b[0]);
+      if (serverLevel && serverLevel->getLevelData())
+        serverLevel->getLevelData()->setRaining(e.b[0]);
       break;
     case KSetThundering:
       if (level && level->getLevelData())
         level->getLevelData()->setThundering(e.b[0]);
+      if (serverLevel && serverLevel->getLevelData())
+        serverLevel->getLevelData()->setThundering(e.b[0]);
       break;
     case KSetDifficulty:
       if (level)
         level->difficulty = e.i[0];
+      if (serverLevel)
+        serverLevel->difficulty = e.i[0];
       break;
     case KGiveXPLevels:
-      if (player)
+      if (player) {
         player->giveExperienceLevels(e.i[0]);
+        if (serverPlayer) serverPlayer->giveExperienceLevels(e.i[0]);
+      }
       break;
     case KGiveItem: {
       int id = e.i[0], count = e.i[1], aux = e.i[2];
@@ -321,16 +365,21 @@ void ApplyPendingActions(Level *level, Player *player) {
           static_cast<unsigned>(id) < Item::items.length &&
           Item::items[id] != nullptr) {
         auto item = std::make_shared<ItemInstance>(id, count, aux);
-        if (player->inventory->add(item)) {
+        if (GiveItemOnServerOnly(item))
+          ; // client will receive item via container sync
+        else if (player->inventory->add(item))
           player->inventory->setChanged();
-          SyncGiveItemToServer(player, item);
-        }
       }
       break;
     }
     case KClearInventory:
       if (player && player->inventory) {
         player->inventory->clearInventory(-1, -1);
+        if (serverPlayer && serverPlayer->inventory) {
+          serverPlayer->inventory->clearInventory(-1, -1);
+          serverPlayer->inventory->setChanged();
+          serverPlayer->refreshContainer(serverPlayer->inventoryMenu);
+        }
       }
       break;
     default:
@@ -371,10 +420,10 @@ void ApplyPendingActions(Level *level, Player *player) {
       }
       display->put(L"Lore", loreList);
     }
-    if (player->inventory->add(item)) {
+    if (GiveItemOnServerOnly(item))
+      ; // client will receive item via container sync
+    else if (player->inventory->add(item))
       player->inventory->setChanged();
-      SyncGiveItemToServer(player, item);
-    }
   }
 
   // Refresh inventory cache so mod thread sees current slots when it calls getInventory().
