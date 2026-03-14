@@ -1,4 +1,15 @@
-# MinecraftConsoles
+# Voxel Platform
+
+Renamed to avoid future DMCA requests from a certain large company.
+This project is a direct clone of [MinecraftConsoles by smartcmd](https://github.com/smartcmd/MinecraftConsoles).
+
+## The mod loader
+
+The mod loader currently supports a TS/JS sdk with future endeavors to support languages including but not limited to: Rust, C++, Python, Lua, & Go.
+
+## TypeScript SDK
+
+As of right now there is no documentation on usage, as it's still very early stage on creating the bridge from C++ to the node api and exposing functions.
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/jrum7HhegA)
 
@@ -9,6 +20,7 @@
 This project contains the source code of Minecraft Legacy Console Edition v1.6.0560.0 (TU19) with some fixes and improvements applied.
 
 ## Download
+
 Windows users can download our [Nightly Build](https://github.com/smartcmd/MinecraftConsoles/releases/tag/nightly)! Simply download the `.zip` file and extract it to a folder where you'd like to keep the game. You can set your username in `username.txt` (you'll have to make this file)
 
 ## Platform Support
@@ -42,12 +54,13 @@ Parts of this feature are based on code from [LCEMP](https://github.com/LCEMP/LC
 
 ### Launch Arguments
 
-| Argument           | Description                                                                                         |
-|--------------------|-----------------------------------------------------------------------------------------------------|
-| `-name <username>` | Sets your in-game username.                                                                         |
-| `-fullscreen`      | Launches the game in Fullscreen mode                                                                |
+| Argument           | Description                          |
+| ------------------ | ------------------------------------ |
+| `-name <username>` | Sets your in-game username.          |
+| `-fullscreen`      | Launches the game in Fullscreen mode |
 
 Example:
+
 ```
 Minecraft.Client.exe -name Steve -fullscreen
 ```
@@ -97,6 +110,7 @@ For more information, see [COMPILE.md](COMPILE.md).
 - Native builds for platforms other than Windows have not been tested and are most likely non-functional. The Windows nightly build may still run on macOS and Linux through Wine or CrossOver, but that path is unofficial and not currently supported
 
 ## Contributors
+
 Would you like to contribute to this project? Please read our [Contributor's Guide](CONTRIBUTING.md) before doing so! This document includes our current goals, standards for inclusions, rules, and more.
 
 ## Star History

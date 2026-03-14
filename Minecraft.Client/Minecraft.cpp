@@ -4819,7 +4819,15 @@ void Minecraft::main()
 	// 4J-PB - Can't call this for the first 5 seconds of a game - MS rule
 	//if (ProfileManager.IsFullVersion())
 	{
-		name = L"Player" + std::to_wstring(System::currentTimeMillis() % 1000);
+#ifdef _WINDOWS64
+		extern wchar_t g_Win64UsernameW[17];
+		if (g_Win64UsernameW[0] != L'\0')
+			name = g_Win64UsernameW;
+		else
+#endif
+		{
+			name = L"Player" + std::to_wstring(System::currentTimeMillis() % 1000);
+		}
 		sessionId = L"-";
 		/* 4J - TODO - get a session ID from somewhere?
 		if (args.length > 0) name = args[0];
