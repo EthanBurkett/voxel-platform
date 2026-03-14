@@ -14,8 +14,8 @@ std::queue<EventBus::QueuedEvent> &EventBus::Queue() {
   return q;
 }
 
-std::unordered_map<std::string, std::vector<napi_ref>> &EventBus::Listeners() {
-  static std::unordered_map<std::string, std::vector<napi_ref>> m;
+std::unordered_map<std::string, std::vector<EventBus::ListenerEntry>> &EventBus::Listeners() {
+  static std::unordered_map<std::string, std::vector<EventBus::ListenerEntry>> m;
   return m;
 }
 
@@ -26,7 +26,8 @@ napi_env &EventBus::StoredEnv() {
 
 void EventBus::SetEnv(napi_env env) { StoredEnv() = env; }
 
-void EventBus::On(napi_env env, const char *eventName, napi_value callback) {
+void EventBus::On(napi_env env, const char *eventName, napi_value callback,
+                  const char *scopeOpt) {
   if (!eventName || !callback)
     return;
   napi_valuetype vt;
@@ -36,7 +37,27 @@ void EventBus::On(napi_env env, const char *eventName, napi_value callback) {
   if (napi_create_reference(env, callback, 1, &ref) != napi_ok)
     return;
   std::string key(eventName);
-  Listeners()[key].push_back(ref);
+  std::string scope(scopeOpt ? scopeOpt : "");
+  Listeners()[key].emplace_back(ref, scope);
+}
+
+void EventBus::RemoveScope(napi_env env, const char *scope) {
+  if (!env || !scope || !*scope)
+    return;
+  std::string scopeStr(scope);
+  auto &listeners = Listeners();
+  for (auto &kv : listeners) {
+    std::vector<EventBus::ListenerEntry> &vec = kv.second;
+    auto it = vec.begin();
+    while (it != vec.end()) {
+      if (it->second == scopeStr) {
+        napi_delete_reference(env, it->first);
+        it = vec.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
 }
 
 void EventBus::QueueEmit(const char *eventName, const char *payloadJson) {
@@ -105,9 +126,9 @@ void EventBus::ProcessQueue(napi_env env) {
       ModLog("[EventBus] ProcessQueue: get_global failed for recv '%s'\n", e.name.c_str());
       continue;
     }
-    for (napi_ref ref : it->second) {
+    for (const EventBus::ListenerEntry &entry : it->second) {
       napi_value fn = nullptr;
-      if (napi_get_reference_value(env, ref, &fn) != napi_ok) {
+      if (napi_get_reference_value(env, entry.first, &fn) != napi_ok) {
         ModLog("[EventBus] ProcessQueue: get_reference_value failed for '%s'\n", e.name.c_str());
         continue;
       }

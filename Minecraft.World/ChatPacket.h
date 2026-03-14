@@ -98,6 +98,9 @@ public:
 		e_ChatCommandTeleportMe,
 		e_ChatCommandTeleportToMe,
 
+		/** Mod SDK: broadcast plain text to all players (no "<name>" prefix). */
+		e_ChatSdkBroadcast,
+
 	};
 
 public:

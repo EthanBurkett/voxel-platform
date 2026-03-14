@@ -10842,6 +10842,7 @@ xcopy /q /y /i /s /e $(ProjectDir)Durango\CU  $(LayoutDir)Image\Loose\CU</Comman
     <ClInclude Include="ModLoader\engine\mod_objects.h" />
     <ClInclude Include="ModLoader\engine\node_host.h" />
     <ClInclude Include="ModLoader\engine\type_generator.h" />
+    <ClInclude Include="ModLoader\engine\item_registry.h" />
     <ClInclude Include="MultiPlayerChunkCache.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64EC'">false</ExcludedFromBuild>
@@ -33951,6 +33952,14 @@ xcopy /q /y /i /s /e $(ProjectDir)Durango\CU  $(LayoutDir)Image\Loose\CU</Comman
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <ClCompile Include="ModLoader\engine\action_queue.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="ModLoader\engine\mod_command_registry.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="ModLoader\engine\game_bridge.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
@@ -33979,6 +33988,10 @@ xcopy /q /y /i /s /e $(ProjectDir)Durango\CU  $(LayoutDir)Image\Loose\CU</Comman
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <ClCompile Include="ModLoader\engine\item_registry.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="..\..\node-main\src\node_snapshot_stub.cc">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'!='Release|x64' and '$(Configuration)|$(Platform)'!='Debug|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -34001,6 +34014,18 @@ xcopy /q /y /i /s /e $(ProjectDir)Durango\CU  $(LayoutDir)Image\Loose\CU</Comman
       <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ClCompile Include="ModLoader\modules\player_module.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="ModLoader\modules\world_module.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="ModLoader\modules\chat_module.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="ModLoader\modules\items_module.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalOptions>/std:c++20 /Zc:__cplusplus /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>

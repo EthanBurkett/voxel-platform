@@ -109,6 +109,8 @@ target_compile_definitions(MinecraftClient PRIVATE
 set_source_files_properties(
   "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/event_bus.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/game_bridge.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/action_queue.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/mod_command_registry.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/module_registry.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/mod_objects.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/Minecraft.Client/ModLoader/engine/node_host.cpp"

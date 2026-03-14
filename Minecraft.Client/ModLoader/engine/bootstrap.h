@@ -17,6 +17,7 @@
 //   6. Expose all linked C++ modules as globals and via require() in every mod
 //   context.
 
+// Split into two literals to stay under MSVC string literal limit (~16k).
 static const char *kBootstrap = R"JS(
 (function() {
   'use strict';
@@ -71,12 +72,34 @@ static const char *kBootstrap = R"JS(
     }
   }
 
+  // Item enum (e.g. Item.DIAMOND_SWORD) and createItemStack() for chainable .setAmount/.setName/.setLore
+  if (globalThis.items && typeof globalThis.items.getItemIds === 'function') {
+    globalThis.Item = globalThis.items.getItemIds();
+  }
+  globalThis.createItemStack = function(id, count, auxValue) {
+    var s = { id: id, count: count != null ? count : 1, auxValue: auxValue != null ? auxValue : 0 };
+    s.setAmount = function(n) { s.count = n; return s; };
+    s.setName = function(n) { s.name = n; return s; };
+    s.setLore = function(l) { s.lore = Array.isArray(l) ? l : [l]; return s; };
+    s.getAmount = function() { return s.count; };
+    s.getName = function() { return s.name; };
+    s.getLore = function() { return s.lore; };
+    return s;
+  };
+
   // Strictly typed helper: events.onJoinWorld((player, world) => void) — subscribes to join_world and passes Player + World instances
   if (globalThis.events && globalThis.player && typeof globalThis.events.on === 'function') {
     globalThis.events.onJoinWorld = function(cb) {
       globalThis.events.on('join_world', function() {
-        var p = globalThis.player.get();
-        if (p && typeof p.getWorld === 'function') cb(p, p.getWorld());
+        try {
+          var p = globalThis.player.get();
+          if (!p || typeof p.getWorld !== 'function') return;
+          var w = p.getWorld();
+          if (!w) return;
+          cb(p, w);
+        } catch (e) {
+          process.stderr.write('[embed] onJoinWorld: ' + (e && e.message ? e.message : String(e)) + '\n');
+        }
       });
     };
   }
@@ -194,6 +217,50 @@ static const char *kBootstrap = R"JS(
   }
 
   // ============================================================
+  // Hot-reload state: track loaded mods and scope for commands/events cleanup
+  // ============================================================
+  var loadedMods = {};
+  var __currentModScope = null;
+
+  function unloadMod(id) {
+    if (!loadedMods[id]) return;
+    const rec = loadedMods[id];
+    if (commands && typeof commands.unregister === 'function') {
+      for (let i = 0; i < rec.commandsRegistered.length; i++)
+        commands.unregister(rec.commandsRegistered[i]);
+    }
+    if (events && typeof events.offScope === 'function')
+      events.offScope(id);
+    delete loadedMods[id];
+    process.stderr.write('[hot-reload] Unloaded mod: ' + id + '\n');
+  }
+
+  function reloadMod(id) {
+    const rec = loadedMods[id];
+    if (!rec) return;
+    const descriptor = rec.descriptor;
+    unloadMod(id);
+    try {
+      runMod(descriptor);
+      process.stderr.write('[hot-reload] Reloaded mod: ' + descriptor.name + '\n');
+    } catch (e) {
+      process.stderr.write('[hot-reload] Reload failed: ' + (e && e.message ? e.message : String(e)) + '\n');
+    }
+  }
+
+  function getModIdForPath(fullPath) {
+    const normalized = path.resolve(fullPath);
+    for (const id in loadedMods) {
+      const d = loadedMods[id].descriptor;
+      const entryFull = path.resolve(d.entryFile);
+      if (entryFull === normalized) return id;
+      if (d.isDirectory && normalized.startsWith(path.resolve(d.modDir) + path.sep))
+        return id;
+    }
+    return null;
+  }
+
+  // ============================================================
   // 4. Mod descriptor resolution
   //    Returns: { name, entryFile, modDir, nodeModulesDir, isDirectory, isTs }
   // ============================================================
@@ -275,8 +342,31 @@ static const char *kBootstrap = R"JS(
   //    (or mod's node_modules if it has one), so mods can't accidentally
   //    stomp each other's dependencies.
   // ============================================================
+  )JS"
+  R"JS(
   function runMod(descriptor) {
     const { name, entryFile, modDir, nodeModulesDir, isDirectory, isTs } = descriptor;
+
+    descriptor.id = path.resolve(entryFile);
+    if (loadedMods[descriptor.id])
+      unloadMod(descriptor.id);
+    loadedMods[descriptor.id] = { descriptor: descriptor, commandsRegistered: [] };
+    __currentModScope = descriptor.id;
+
+    var origRegister = (commands && commands.register) ? commands.register.bind(commands) : null;
+    var origOn = (events && events.on) ? events.on.bind(events) : null;
+    if (commands && origRegister) {
+      commands.register = function(cmdName, cb) {
+        if (__currentModScope && loadedMods[__currentModScope])
+          loadedMods[__currentModScope].commandsRegistered.push(cmdName);
+        return origRegister(cmdName, cb);
+      };
+    }
+    if (events && origOn) {
+      events.on = function(evName, cb) {
+        return origOn(evName, cb, __currentModScope || '');
+      };
+    }
 
     process.stderr.write('[mod:' + name + '] Loading ' + entryFile + '\n');
 
@@ -345,6 +435,9 @@ static const char *kBootstrap = R"JS(
     );
 
     modModule.loaded = true;
+    if (origRegister) commands.register = origRegister;
+    if (origOn) events.on = origOn;
+    __currentModScope = null;
     process.stderr.write('[mod:' + name + '] Done\n');
   }
 
@@ -402,6 +495,52 @@ static const char *kBootstrap = R"JS(
   }
 
   // ============================================================
+  // Hot-reload: watch mods directory and reload on file change
+  // ============================================================
+  var hotReloadTimer = null;
+  var pendingReloadPaths = {};
+
+  function startHotReloadWatch() {
+    if (!fs.existsSync(MODS_DIR)) return;
+    try {
+      fs.watch(MODS_DIR, { recursive: true }, function(ev, filename) {
+        if (!filename || filename.startsWith('.')) return;
+        var fullPath = path.join(MODS_DIR, filename);
+        fullPath = path.resolve(fullPath);
+        pendingReloadPaths[fullPath] = true;
+        if (hotReloadTimer) clearTimeout(hotReloadTimer);
+        hotReloadTimer = setTimeout(function() {
+          hotReloadTimer = null;
+          var paths = Object.keys(pendingReloadPaths);
+          pendingReloadPaths = {};
+          var reloaded = {};
+          for (var i = 0; i < paths.length; i++) {
+            var id = getModIdForPath(paths[i]);
+            if (id && !reloaded[id]) {
+              reloaded[id] = true;
+              reloadMod(id);
+            } else if (!id) {
+              try {
+                var d = resolveMod(paths[i]);
+                if (d) {
+                  var resolvedId = path.resolve(d.entryFile);
+                  if (!reloaded[resolvedId]) {
+                    reloaded[resolvedId] = true;
+                    runMod(d);
+                  }
+                }
+              } catch (e) {}
+            }
+          }
+        }, 300);
+      });
+      process.stderr.write('[embed] Hot-reload watch on mods/ enabled\n');
+    } catch (e) {
+      process.stderr.write('[embed] Hot-reload watch failed: ' + e.message + '\n');
+    }
+  }
+
+  // ============================================================
   // Event pump: process C++-queued game events every tick so mods receive them.
   // ============================================================
   if (globalThis.events && typeof globalThis.events._tick === 'function') {
@@ -451,6 +590,7 @@ static const char *kBootstrap = R"JS(
       runMod(descriptor);
     } else {
       loadAllMods();
+      startHotReloadWatch();
     }
   } catch (e) {
     process.stderr.write('[embed] Fatal: ' + (e && e.stack ? e.stack : String(e)) + '\n');

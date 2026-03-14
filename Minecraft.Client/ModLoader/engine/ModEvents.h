@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 #include "event_bus.h"
 #include <string>
+#include <vector>
 
 namespace ModEvents {
 
@@ -69,4 +70,16 @@ void EmitPlayerChatW(const wchar_t *message, int playerId = 0);
 
 // Emit world_loaded with level name from wide string. Implemented in ModEvents.cpp.
 void EmitWorldLoadedW(const std::wstring& worldName);
+
+// --- Pending chat (mod -> game) ---
+// SetPendingChatMessage*: broadcast as player chat (ChatPacket to server).
+// SetPendingLocalChatMessage*: show on local HUD only — use for command feedback.
+void SetPendingChatMessage(const std::wstring& message);
+void SetPendingChatMessageUtf8(const char* messageUtf8);
+bool ConsumePendingChatMessage(std::wstring* out);
+void SetPendingLocalChatMessageUtf8(const char* messageUtf8);
+void ConsumePendingLocalChatMessages(std::vector<std::wstring>* out);
+
+// Emit "command" event when player types /command args. Payload: {"command":"...","args":["..."]}
+void EmitCommand(const char* command, const char* argsJson);
 } // namespace ModEvents

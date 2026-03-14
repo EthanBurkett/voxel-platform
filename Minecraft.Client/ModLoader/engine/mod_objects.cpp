@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "mod_objects.h"
+#include "game_bridge.h"
 #include <node_api.h>
 #include <cmath>
 #include <cstring>
@@ -55,6 +56,23 @@ napi_value CreateLocation(napi_env env, double x, double y, double z) {
   return obj;
 }
 
+static napi_value WorldGetName(napi_env env, napi_callback_info info) {
+  napi_value thisVal = nullptr;
+  napi_get_cb_info(env, info, nullptr, nullptr, &thisVal, nullptr);
+  napi_value nameProp = nullptr;
+  if (!thisVal || napi_get_named_property(env, thisVal, "name", &nameProp) != napi_ok)
+    return nullptr;
+  return nameProp;
+}
+
+static napi_value WorldGetDimension(napi_env env, napi_callback_info info) {
+  (void)info;
+  int d = GameBridge::GetLocalPlayerDimension();
+  napi_value v = nullptr;
+  napi_create_int32(env, d, &v);
+  return v;
+}
+
 napi_value CreateWorld(napi_env env, const char *nameUtf8) {
   napi_value obj = nullptr;
   if (napi_create_object(env, &obj) != napi_ok)
@@ -63,6 +81,12 @@ napi_value CreateWorld(napi_env env, const char *nameUtf8) {
   size_t len = nameUtf8 ? strlen(nameUtf8) : 0;
   napi_create_string_utf8(env, nameUtf8 ? nameUtf8 : "", len, &nameVal);
   napi_set_named_property(env, obj, "name", nameVal);
+
+  napi_value getNameFn = nullptr, getDimFn = nullptr;
+  napi_create_function(env, "getName", NAPI_AUTO_LENGTH, WorldGetName, nullptr, &getNameFn);
+  napi_create_function(env, "getDimension", NAPI_AUTO_LENGTH, WorldGetDimension, nullptr, &getDimFn);
+  napi_set_named_property(env, obj, "getName", getNameFn);
+  napi_set_named_property(env, obj, "getDimension", getDimFn);
   return obj;
 }
 

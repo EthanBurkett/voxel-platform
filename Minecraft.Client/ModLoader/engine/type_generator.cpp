@@ -2,6 +2,7 @@
 #include "type_generator.h"
 #include "mod_log.h"
 #include "module_registry.h"
+#include "item_registry.h"
 
 #include <cstdio>
 #include <cstring>
@@ -149,18 +150,29 @@ void TypeGenerator::GenerateGlobalsDts(const std::string &outputDir) {
   out << "  name: string;\n";
   out << "}\n\n";
 
-  out << "/** Item stack (id 0 = empty). */\n";
-  out << "declare class ItemStack {\n";
+  out << "/** Item stack data — use createItemStack() for a builder with .setAmount(), .setName(), .setLore(). */\n";
+  out << "interface ItemStackData {\n";
   out << "  id: number;\n";
   out << "  count: number;\n";
   out << "  auxValue: number;\n";
+  out << "  name?: string;\n";
+  out << "  lore?: string[];\n";
   out << "}\n\n";
+  out << "interface ItemStack extends ItemStackData {\n";
+  out << "  setAmount(amount: number): ItemStack;\n";
+  out << "  setName(name: string): ItemStack;\n";
+  out << "  setLore(lore: string[]): ItemStack;\n";
+  out << "  getAmount(): number;\n";
+  out << "  getName(): string | undefined;\n";
+  out << "  getLore(): string[] | undefined;\n";
+  out << "}\n\n";
+  out << "declare function createItemStack(id: number, count?: number, auxValue?: number): ItemStack;\n\n";
 
   out << "/** Player inventory: main slots (36), selected hotbar index, armor (4). */\n";
   out << "declare class Inventory {\n";
-  out << "  slots: ItemStack[];\n";
+  out << "  slots: ItemStackData[];\n";
   out << "  selectedSlot: number;\n";
-  out << "  armor: ItemStack[];\n";
+  out << "  armor: ItemStackData[];\n";
   out << "}\n\n";
 
   out << "/** Local or remote player. Get via player.get() or player.fromUuid(). */\n";
@@ -176,6 +188,37 @@ void TypeGenerator::GenerateGlobalsDts(const std::string &outputDir) {
   out << "  getExperienceLevel(): number;\n";
   out << "  getTotalExperience(): number;\n";
   out << "  getInventory(): Inventory;\n";
+  out << "  isSneaking(): boolean;\n";
+  out << "  isSprinting(): boolean;\n";
+  out << "  getSelectedItem(): ItemStackData | null;\n";
+  out << "  getDimension(): number;\n";
+  out << "  getPitch(): number;\n";
+  out << "  getYaw(): number;\n";
+  out << "  isInWater(): boolean;\n";
+  out << "  isOnFire(): boolean;\n";
+  out << "  isUsingItem(): boolean;\n";
+  out << "  isFlying(): boolean;\n";
+  out << "  canFly(): boolean;\n";
+  out << "  /** Queued — applies next game tick. */\n";
+  out << "  setHealth(value: number): void;\n";
+  out << "  setFoodLevel(value: number): void;\n";
+  out << "  setSaturation(value: number): void;\n";
+  out << "  setPosition(x: number, y: number, z: number): void;\n";
+  out << "  setRotation(pitch: number, yaw: number): void;\n";
+  out << "  /** 0 survival, 1 creative, 2 adventure */\n";
+  out << "  setGameMode(modeId: number): void;\n";
+  out << "  addExperienceLevels(levels: number): void;\n";
+  out << "  giveItem(itemId: number, count?: number, auxValue?: number): void;\n";
+  out << "  giveItemStack(stack: ItemStackData): void;\n";
+  out << "  clearInventory(): void;\n";
+  out << "}\n\n";
+
+  // Item enum — all game item/block IDs for autocomplete (e.g. Item.DIAMOND_SWORD)
+  out << "/** Item and block IDs. Use with giveItem(), giveItemStack(), etc. */\n";
+  out << "declare namespace Item {\n";
+  for (const auto &p : ItemRegistry::GetAllItemIds()) {
+    out << "  const " << p.first << ": " << p.second << ";\n";
+  }
   out << "}\n\n";
 
   // Strictly typed game events: payload types and event name union for events.on() autocomplete
@@ -184,8 +227,9 @@ void TypeGenerator::GenerateGlobalsDts(const std::string &outputDir) {
   out << "interface PlayerChatEvent { message: string; playerId: number; }\n";
   out << "interface WorldLoadedEvent { worldName: string; }\n";
   out << "interface TickEvent { }\n";
-  out << "interface JoinWorldEvent { playerId: number; worldName: string; }\n\n";
-  out << "type GameEventName = 'player_join' | 'player_chat' | 'world_loaded' | 'tick' | 'join_world';\n\n";
+  out << "interface JoinWorldEvent { playerId: number; worldName: string; }\n";
+  out << "interface CommandEvent { command: string; args: string[]; }\n\n";
+  out << "type GameEventName = 'player_join' | 'player_chat' | 'world_loaded' | 'tick' | 'join_world' | 'command';\n\n";
 
   for (const auto &mod : defs) {
     // WorldLocation is exposed as the global class above, not as a namespace
@@ -200,9 +244,12 @@ void TypeGenerator::GenerateGlobalsDts(const std::string &outputDir) {
       out << "  function on(eventName: 'world_loaded', callback: (data: WorldLoadedEvent) => void): void;\n";
       out << "  function on(eventName: 'tick', callback: (data: TickEvent) => void): void;\n";
       out << "  function on(eventName: 'join_world', callback: (data: JoinWorldEvent) => void): void;\n";
+      out << "  function on(eventName: 'command', callback: (data: CommandEvent) => void): void;\n";
       out << "  function on(eventName: GameEventName, callback: (data: unknown) => void): void;\n";
       out << "  /** Subscribe to join_world with (player, world) callback. */\n";
       out << "  function onJoinWorld(callback: (player: Player, world: World) => void): void;\n";
+      out << "  /** Remove all listeners for a scope (used by hot-reload). */\n";
+      out << "  function offScope(scope: string): void;\n";
       out << "  function _tick(): void;\n";
       out << "}\n\n";
       continue;

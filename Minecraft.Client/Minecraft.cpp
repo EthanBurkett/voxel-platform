@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <vector>
 #include "Minecraft.h"
 #include "Common/UI/UIScene.h"
 #include "GameMode.h"
@@ -74,6 +75,9 @@
 #include "DLCTexturePack.h"
 #ifndef _XBOX
 #include "ModLoader/engine/ModEvents.h"
+#include "ModLoader/engine/action_queue.h"
+#include "ModLoader/engine/mod_command_registry.h"
+#include "..\Minecraft.World\ChatPacket.h"
 #endif
 
 #ifdef __ORBIS__
@@ -2293,6 +2297,34 @@ void Minecraft::levelTickThreadInitFunc()
 // 4J - added bUpdateTextures, which is true if the actual renderer textures are to be updated - this will be true for the last time this tick runs with bFirst true
 void Minecraft::tick(bool bFirst, bool bUpdateTextures)
 {
+#ifndef _XBOX
+	// Local-only HUD messages from mods (chat.local) — not sent to server
+	{
+		vector<wstring> localLines;
+		ModEvents::ConsumePendingLocalChatMessages(&localLines);
+		if (!localLines.empty() && gui != nullptr && player != nullptr) {
+			const int pad = player->GetXboxPad();
+			for (const auto& line : localLines) {
+				if (!line.empty())
+					gui->addMessage(line, pad, false);
+			}
+		}
+	}
+	// Send any chat message queued by mods (chat.send — broadcast as player)
+	{
+		wstring pendingChat;
+		if (ModEvents::ConsumePendingChatMessage(&pendingChat) && !pendingChat.empty() && player != nullptr)
+		{
+			MultiplayerLocalPlayer* mplp = dynamic_cast<MultiplayerLocalPlayer*>(player.get());
+			if (mplp && mplp->connection)
+				mplp->connection->send(shared_ptr<ChatPacket>(
+					new ChatPacket(pendingChat, ChatPacket::e_ChatSdkBroadcast)));
+		}
+		if (level != nullptr && player != nullptr)
+			ModActionQueue::ApplyPendingActions(level, player.get());
+	}
+#endif
+
 	int iPad=player->GetXboxPad();
 	//OutputDebugString("Minecraft::tick\n");
 
@@ -4872,6 +4904,77 @@ bool Minecraft::renderDebug()
 
 bool Minecraft::handleClientSideCommand(const wstring& chatMessage)
 {
+#ifndef _XBOX
+	if (chatMessage.empty() || chatMessage[0] != L'/')
+		return false;
+
+	wstring rest = chatMessage.substr(1);
+	size_t firstSpace = rest.find(L' ');
+	wstring cmd = (firstSpace == wstring::npos) ? rest : rest.substr(0, firstSpace);
+	wstring argsStr = (firstSpace == wstring::npos) ? L"" : rest.substr(firstSpace + 1);
+
+	std::string cmdUtf8;
+#ifdef _WIN32
+	{
+		int len = WideCharToMultiByte(CP_UTF8, 0, cmd.c_str(), (int)cmd.size(), nullptr, 0, nullptr, nullptr);
+		if (len > 0)
+		{
+			cmdUtf8.resize(static_cast<size_t>(len));
+			WideCharToMultiByte(CP_UTF8, 0, cmd.c_str(), (int)cmd.size(), &cmdUtf8[0], len, nullptr, nullptr);
+		}
+	}
+#endif
+	for (char &c : cmdUtf8)
+		if (c >= 'A' && c <= 'Z')
+			c = static_cast<char>(c - 'A' + 'a');
+
+	std::vector<std::string> argVec;
+	size_t pos = 0;
+	while (pos < argsStr.size())
+	{
+		size_t end = argsStr.find_first_of(L" \t", pos);
+		wstring argw = (end == wstring::npos) ? argsStr.substr(pos) : argsStr.substr(pos, end - pos);
+		if (!argw.empty())
+		{
+			std::string argUtf8;
+#ifdef _WIN32
+			int len = WideCharToMultiByte(CP_UTF8, 0, argw.c_str(), (int)argw.size(), nullptr, 0, nullptr, nullptr);
+			if (len > 0)
+			{
+				argUtf8.resize(static_cast<size_t>(len));
+				WideCharToMultiByte(CP_UTF8, 0, argw.c_str(), (int)argw.size(), &argUtf8[0], len, nullptr, nullptr);
+			}
+#endif
+			argVec.push_back(std::move(argUtf8));
+		}
+		pos = (end == wstring::npos) ? argsStr.size() : end + 1;
+	}
+
+	if (ModCommandRegistry::HasHandler(cmdUtf8))
+	{
+		ModCommandRegistry::QueueDispatch(cmdUtf8, argVec);
+		return true;
+	}
+
+	std::string argsJson = "[";
+	bool first = true;
+	for (const std::string &a : argVec)
+	{
+		std::string escaped;
+		for (char c : a)
+		{
+			if (c == '\\' || c == '"')
+				escaped += '\\';
+			escaped += c;
+		}
+		if (!first)
+			argsJson += ",";
+		argsJson += "\"" + escaped + "\"";
+		first = false;
+	}
+	argsJson += "]";
+	ModEvents::EmitCommand(cmdUtf8.c_str(), argsJson.c_str());
+#endif
 	return false;
 }
 

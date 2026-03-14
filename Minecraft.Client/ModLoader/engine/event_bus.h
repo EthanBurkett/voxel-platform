@@ -20,8 +20,12 @@
 // ---------------------------------------------------------------------------
 class EventBus {
 public:
-  // Register a JS callback for an event. Call from NAPI (mc.events.on).
-  static void On(napi_env env, const char *eventName, napi_value callback);
+  // Register a JS callback for an event. scopeOpt = optional mod scope for hot-reload cleanup.
+  static void On(napi_env env, const char *eventName, napi_value callback,
+                const char *scopeOpt = nullptr);
+
+  // Remove all listeners registered with the given scope (e.g. on mod unload).
+  static void RemoveScope(napi_env env, const char *scope);
 
   // Queue an event to be dispatched on the next ProcessQueue(env) call.
   // payloadJson is a JSON string (object) passed to the listener.
@@ -40,8 +44,10 @@ private:
     std::string payload;
   };
 
+  using ListenerEntry = std::pair<napi_ref, std::string>; // ref, scope
+
   static std::mutex &QueueMutex();
   static std::queue<QueuedEvent> &Queue();
-  static std::unordered_map<std::string, std::vector<napi_ref>> &Listeners();
+  static std::unordered_map<std::string, std::vector<ListenerEntry>> &Listeners();
   static napi_env &StoredEnv();
 };

@@ -23,6 +23,9 @@
 #include "ModLoader/modules/events_module.cpp"
 #include "ModLoader/modules/location_module.cpp"
 #include "ModLoader/modules/player_module.cpp"
+#include "ModLoader/modules/world_module.cpp"
+#include "ModLoader/modules/chat_module.cpp"
+#include "ModLoader/modules/commands_module.cpp"
 #include <ShellScalingApi.h>
 #include <assert.h>
 #include <iostream>

@@ -506,6 +506,8 @@ set(MINECRAFT_CLIENT_SOURCES
   "stubs.cpp"
   "ModLoader/engine/event_bus.cpp"
   "ModLoader/engine/game_bridge.cpp"
+  "ModLoader/engine/action_queue.cpp"
+  "ModLoader/engine/mod_command_registry.cpp"
   "ModLoader/engine/ModEvents.cpp"
   "ModLoader/engine/mod_log.cpp"
   "ModLoader/engine/mod_objects.cpp"

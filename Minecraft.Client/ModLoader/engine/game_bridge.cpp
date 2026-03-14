@@ -2,6 +2,7 @@
 #include "stdafx.h"
 
 #ifndef _XBOX
+#include "../../../Minecraft.World/Abilities.h"
 #include "../../../Minecraft.World/FoodData.h"
 #include "../../../Minecraft.World/Inventory.h"
 #include "../../../Minecraft.World/ItemInstance.h"
@@ -9,8 +10,13 @@
 #include "../../../Minecraft.World/LevelData.h"
 #include "../../../Minecraft.World/LevelSettings.h"
 #include "../../Minecraft.h"
+#include "../../MinecraftServer.h"
 #include "../../MultiPlayerLevel.h"
 #include "../../MultiPlayerLocalPlayer.h"
+#include "../../PlayerList.h"
+#include "../../ServerPlayer.h"
+#include "../Player.h"
+#include <mutex>
 #include <string>
 
 #ifdef _WIN32
@@ -182,45 +188,142 @@ bool GetLocalPlayerExperience(int *level, int *totalXP)
     return false;
 }
 
-bool GetLocalPlayerInventory(InventoryData *out)
-{
-    if (!out)
-    {
-        return false;
-    }
-    out->slots.clear();
-    out->armor.clear();
-    out->selectedSlot = 0;
 #ifndef _XBOX
-    Minecraft *mc = Minecraft::GetInstance();
-    if (!mc || !mc->player || !mc->player->inventory)
+static std::mutex s_inventoryCacheMutex;
+static InventoryData s_cachedInventory;
+static bool s_inventoryCacheValid = false;
+#endif
+
+// Called from game thread only (e.g. end of ApplyPendingActions).
+// Prefer the server player's inventory when in a local game so the cache reflects
+// the authoritative state (client inventory can show zeros if not yet synced).
+void UpdateLocalPlayerInventoryCache(Player *player)
+{
+#ifndef _XBOX
+    if (!player)
     {
-        return false;
+        std::lock_guard<std::mutex> lock(s_inventoryCacheMutex);
+        s_inventoryCacheValid = false;
+        return;
     }
-    Inventory *inv = mc->player->inventory.get();
-    if (!inv || inv->items.length == 0)
+    Inventory *inv = player->inventory ? player->inventory.get() : nullptr;
+    // In local/hosted games the server is authoritative; use its inventory for the cache.
+    MinecraftServer *server = MinecraftServer::getInstance();
+    if (server)
     {
-        return false;
+        PlayerList *list = server->getPlayers();
+        if (list && !list->players.empty())
+        {
+            Minecraft *mc = Minecraft::GetInstance();
+            int idx = mc ? mc->getLocalPlayerIdx() : 0;
+            if (idx < 0 || static_cast<size_t>(idx) >= list->players.size())
+                idx = 0;
+            shared_ptr<ServerPlayer> serverPlayer = list->players[idx];
+            if (serverPlayer && serverPlayer->inventory)
+                inv = serverPlayer->inventory.get();
+        }
     }
-    // Read main inventory from the items array directly (same as getItem(i))
-    const unsigned int mainSlots = inv->items.length <= 36 ? inv->items.length : 36u;
-    for (unsigned int i = 0; i < mainSlots; i++)
+    if (!inv)
+    {
+        std::lock_guard<std::mutex> lock(s_inventoryCacheMutex);
+        s_inventoryCacheValid = false;
+        return;
+    }
+    InventoryData fresh;
+    fresh.slots.clear();
+    fresh.armor.clear();
+    fresh.selectedSlot = inv->selected >= 0 && inv->selected < 9 ? inv->selected : 0;
+    for (unsigned int i = 0; i < 36u; i++)
     {
         ItemSlot slot;
         slot.id = 0;
         slot.count = 0;
         slot.auxValue = 0;
-        shared_ptr<ItemInstance> &itemRef = inv->items[i];
-        if (itemRef)
+        if (i < inv->items.length && inv->items.data)
         {
-            slot.id = itemRef->id;
-            slot.count = itemRef->count;
-            slot.auxValue = itemRef->getAuxValue();
+            shared_ptr<ItemInstance> &itemRef = inv->items[i];
+            if (itemRef)
+            {
+                slot.id = itemRef->id;
+                slot.count = itemRef->count;
+                slot.auxValue = itemRef->getAuxValue();
+            }
+        }
+        fresh.slots.push_back(slot);
+    }
+    const unsigned int armorCount = inv->armor.length <= 4 ? inv->armor.length : 4u;
+    for (unsigned int i = 0; i < armorCount; i++)
+    {
+        ItemSlot slot;
+        slot.id = 0;
+        slot.count = 0;
+        slot.auxValue = 0;
+        shared_ptr<ItemInstance> &armorRef = inv->armor[i];
+        if (armorRef)
+        {
+            slot.id = armorRef->id;
+            slot.count = armorRef->count;
+            slot.auxValue = armorRef->getAuxValue();
+        }
+        fresh.armor.push_back(slot);
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_inventoryCacheMutex);
+        s_cachedInventory = fresh;
+        s_inventoryCacheValid = true;
+    }
+#endif
+}
+
+bool GetLocalPlayerInventory(InventoryData *out)
+{
+    if (!out)
+        return false;
+    out->slots.clear();
+    out->armor.clear();
+    out->selectedSlot = 0;
+#ifndef _XBOX
+    {
+        std::lock_guard<std::mutex> lock(s_inventoryCacheMutex);
+        if (s_inventoryCacheValid)
+        {
+            *out = s_cachedInventory;
+            return true;
+        }
+    }
+    // Fallback: cache not populated yet (e.g. before first tick) — read directly.
+    // Prefer same player resolution as cache path so we see the active local player.
+    Minecraft *mc = Minecraft::GetInstance();
+    if (!mc)
+        return false;
+    shared_ptr<MultiplayerLocalPlayer> targetPlayer = mc->player;
+    int idx = mc->getLocalPlayerIdx();
+    if (idx >= 0 && idx < static_cast<int>(XUSER_MAX_COUNT) && mc->localplayers[idx])
+        targetPlayer = mc->localplayers[idx];
+    if (!targetPlayer || !targetPlayer->inventory)
+        return false;
+    Inventory *inv = targetPlayer->inventory.get();
+    if (!inv)
+        return false;
+    for (unsigned int i = 0; i < 36u; i++)
+    {
+        ItemSlot slot;
+        slot.id = 0;
+        slot.count = 0;
+        slot.auxValue = 0;
+        if (i < inv->items.length && inv->items.data)
+        {
+            shared_ptr<ItemInstance> &itemRef = inv->items[i];
+            if (itemRef)
+            {
+                slot.id = itemRef->id;
+                slot.count = itemRef->count;
+                slot.auxValue = itemRef->getAuxValue();
+            }
         }
         out->slots.push_back(slot);
     }
     out->selectedSlot = inv->selected >= 0 && inv->selected < 9 ? inv->selected : 0;
-    // Read armor from the armor array directly
     const unsigned int armorCount = inv->armor.length <= 4 ? inv->armor.length : 4u;
     for (unsigned int i = 0; i < armorCount; i++)
     {
@@ -240,6 +343,205 @@ bool GetLocalPlayerInventory(InventoryData *out)
     return true;
 #endif
     return false;
+}
+
+// --- Player state ---
+bool GetLocalPlayerSneaking()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->isSneaking();
+#endif
+    return false;
+}
+
+bool GetLocalPlayerSprinting()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->isSprinting();
+#endif
+    return false;
+}
+
+bool GetLocalPlayerSelectedItem(ItemSlot *out)
+{
+    if (!out)
+        return false;
+    out->id = 0;
+    out->count = 0;
+    out->auxValue = 0;
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (!mc || !mc->player)
+        return false;
+    shared_ptr<ItemInstance> sel = mc->player->getSelectedItem();
+    if (!sel)
+        return true;
+    out->id = sel->id;
+    out->count = sel->count;
+    out->auxValue = sel->getAuxValue();
+#endif
+    return true;
+}
+
+int GetLocalPlayerDimension()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->dimension;
+#endif
+    return 0;
+}
+
+void GetLocalPlayerRotation(float *pitchDeg, float *yawDeg)
+{
+    if (pitchDeg)
+        *pitchDeg = 0.0f;
+    if (yawDeg)
+        *yawDeg = 0.0f;
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (!mc || !mc->player)
+        return;
+    if (pitchDeg)
+        *pitchDeg = mc->player->xRot;
+    if (yawDeg)
+        *yawDeg = mc->player->yRot;
+#endif
+}
+
+bool GetLocalPlayerIsInWater()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->isInWater();
+#endif
+    return false;
+}
+
+bool GetLocalPlayerOnFire()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->isOnFire();
+#endif
+    return false;
+}
+
+bool GetLocalPlayerUsingItem()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->player)
+        return mc->player->isUsingItem();
+#endif
+    return false;
+}
+
+void GetLocalPlayerAbilities(bool *flying, bool *mayfly, bool *invulnerable)
+{
+    if (flying)
+        *flying = false;
+    if (mayfly)
+        *mayfly = false;
+    if (invulnerable)
+        *invulnerable = false;
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (!mc || !mc->player)
+        return;
+    Abilities &a = mc->player->abilities;
+    if (flying)
+        *flying = a.flying;
+    if (mayfly)
+        *mayfly = a.mayfly;
+    if (invulnerable)
+        *invulnerable = a.invulnerable;
+#endif
+}
+
+// --- World/level ---
+bool GetBlockAt(int x, int y, int z, int *tileId, int *data)
+{
+    if (!tileId || !data)
+        return false;
+    *tileId = 0;
+    *data = 0;
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (!mc || !mc->level)
+        return false;
+    Level *level = mc->level;
+    *tileId = level->getTile(x, y, z);
+    *data = level->getData(x, y, z);
+#endif
+    return true;
+}
+
+int64_t GetLevelTime()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level && mc->level->getLevelData())
+        return mc->level->getLevelData()->getGameTime();
+#endif
+    return 0;
+}
+
+int64_t GetDayTime()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level && mc->level->getLevelData())
+        return mc->level->getLevelData()->getDayTime();
+#endif
+    return 0;
+}
+
+bool IsRaining()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level && mc->level->getLevelData())
+        return mc->level->getLevelData()->isRaining();
+#endif
+    return false;
+}
+
+bool IsThundering()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level && mc->level->getLevelData())
+        return mc->level->getLevelData()->isThundering();
+#endif
+    return false;
+}
+
+int GetDifficulty()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level)
+        return mc->level->difficulty;
+#endif
+    return 0;
+}
+
+int64_t GetLevelSeed()
+{
+#ifndef _XBOX
+    Minecraft *mc = Minecraft::GetInstance();
+    if (mc && mc->level && mc->level->getLevelData())
+        return mc->level->getLevelData()->getSeed();
+#endif
+    return 0;
 }
 
 } // namespace GameBridge

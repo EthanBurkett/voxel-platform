@@ -616,6 +616,16 @@ void PlayerConnection::handleChat(shared_ptr<ChatPacket> packet)
 		disconnect(DisconnectPacket::eDisconnect_None); // or a specific reason
 		return;
 	}
+	// Mod SDK: broadcast body only (no "<player>"), e.g. command output to everyone
+	if (packet->m_messageType == ChatPacket::e_ChatSdkBroadcast)
+	{
+		server->getPlayers()->broadcastAll(
+			shared_ptr<ChatPacket>(new ChatPacket(message, ChatPacket::e_ChatCustom)));
+		chatSpamTickCount += SharedConstants::TICKS_PER_SECOND;
+		if (chatSpamTickCount > SharedConstants::TICKS_PER_SECOND * 10)
+			disconnect(DisconnectPacket::eDisconnect_None);
+		return;
+	}
 	// Optional: validate characters (acceptableLetters)
 	if (message.length() > 0 && message[0] == L'/')
 	{

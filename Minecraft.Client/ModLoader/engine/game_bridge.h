@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+class Player;
+
 // Bridge to read game state from the main thread for mod callbacks.
 // Used by the player module to implement getWorld(), getLocation(), health, inventory, etc.
 // All functions are safe to call from the Node/mod thread (read-only).
@@ -45,6 +47,30 @@ struct InventoryData {
 };
 
 // Fill out with local player inventory. Returns false if no player.
+// Reads from a cache updated on the game thread (safe to call from mod thread).
 bool GetLocalPlayerInventory(InventoryData *out);
+
+// Update the inventory cache from the given player. Call only from the game/main thread.
+void UpdateLocalPlayerInventoryCache(Player *player);
+
+// --- Player state (read-only) ---
+bool GetLocalPlayerSneaking();
+bool GetLocalPlayerSprinting();
+bool GetLocalPlayerSelectedItem(ItemSlot *out);
+int GetLocalPlayerDimension();
+void GetLocalPlayerRotation(float *pitchDeg, float *yawDeg);
+bool GetLocalPlayerIsInWater();
+bool GetLocalPlayerOnFire();
+bool GetLocalPlayerUsingItem();
+void GetLocalPlayerAbilities(bool *flying, bool *mayfly, bool *invulnerable);
+
+// --- World/level (read-only) ---
+bool GetBlockAt(int x, int y, int z, int *tileId, int *data);
+int64_t GetLevelTime();
+int64_t GetDayTime();
+bool IsRaining();
+bool IsThundering();
+int GetDifficulty();
+int64_t GetLevelSeed();
 
 }  // namespace GameBridge
