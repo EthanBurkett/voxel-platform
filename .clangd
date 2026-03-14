@@ -1,0 +1,38 @@
+# clangd: solution (Win64) + Node.js embedding includes and defines.
+# Matches CMakeLists.txt target_include_directories and target_compile_definitions for MinecraftClient.
+# NODE_ROOT must match CMake (default: C:/Users/Ethan/Documents/Projects/MCCE-Modding/node-main).
+CompileFlags:
+  Add:
+    # Solution / Minecraft (ModLoader so "engine/mod_log.h" etc. resolve)
+    - -IMinecraft.Client
+    - -IMinecraft.Client/ModLoader
+    - -IModLoader
+    - -IMinecraft.Client/Windows64/Iggy/include
+    - -IMinecraft.Client/Xbox/Sentient/Include
+    - -IMinecraft.World
+    - -IMinecraft.World/x64headers
+    - -Iinclude
+    # Node.js (N-API, V8, libuv)
+    - -IC:/Users/Ethan/Documents/Projects/MCCE-Modding/node-main/src
+    - -IC:/Users/Ethan/Documents/Projects/MCCE-Modding/node-main/deps/v8/include
+    - -IC:/Users/Ethan/Documents/Projects/MCCE-Modding/node-main/deps/uv/include
+    # Defines (Win64 Debug — matches vcxproj/CMake)
+    - -D_WINDOWS64
+    - -D_LARGE_WORLDS
+    - -D_DEBUG_MENUS_ENABLED
+    - -D_CRT_NON_CONFORMING_SWPRINTFS
+    - -D_CRT_SECURE_NO_WARNINGS
+    - -D_DEBUG
+    - -DUNICODE
+    - -D_UNICODE
+    - -DWIN32
+    - -D_WINDOWS
+    - -D_ITERATOR_DEBUG_LEVEL=0
+    # C++ and suppressions
+    - -std=c++20
+    - -Wno-pragma-pack
+    - -Wno-invalid-constexpr
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+  Suppress: ['pp_hash_error']
